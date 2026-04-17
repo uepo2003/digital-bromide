@@ -12,12 +12,17 @@ import { User, Bromide, UserBromide } from "@/types";
 import { generateAccessToken, hashPassword, generatePassword } from "@/lib/utils";
 import { motion } from "framer-motion";
 
+type BromideListItem = Pick<Bromide, "id" | "title" | "serial_number">;
+type AssignedBromide = UserBromide & {
+  bromide: BromideListItem;
+};
+
 interface UserWithBromides extends User {
-  user_bromides?: (UserBromide & { bromide: Bromide })[];
+  user_bromides?: AssignedBromide[];
 }
 
 const USERS_CACHE_KEY = "admin:users:cache";
-const BROMIDES_CACHE_KEY = "admin:bromides:cache";
+const BROMIDES_CACHE_KEY = "admin:users:bromides-light:cache";
 
 function readCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
@@ -42,8 +47,8 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserWithBromides[]>(
     () => readCache<UserWithBromides[]>(USERS_CACHE_KEY) ?? []
   );
-  const [bromides, setBromides] = useState<Bromide[]>(
-    () => readCache<Bromide[]>(BROMIDES_CACHE_KEY) ?? []
+  const [bromides, setBromides] = useState<BromideListItem[]>(
+    () => readCache<BromideListItem[]>(BROMIDES_CACHE_KEY) ?? []
   );
   const [isLoading, setIsLoading] = useState(
     () => !readCache<UserWithBromides[]>(USERS_CACHE_KEY)
@@ -69,10 +74,24 @@ export default function AdminUsersPage() {
     const { data, error } = await supabase
       .from("users")
       .select(`
-        *,
+        id,
+        name,
+        email,
+        created_at,
+        updated_at,
         user_bromides (
-          *,
-          bromide:bromides (*)
+          id,
+          user_id,
+          bromide_id,
+          access_token,
+          is_accessed,
+          accessed_at,
+          created_at,
+          bromide:bromides (
+            id,
+            title,
+            serial_number
+          )
         )
       `)
       .order("created_at", { ascending: false });
@@ -80,7 +99,7 @@ export default function AdminUsersPage() {
     if (error) {
       console.error("Error fetching users:", error);
     } else {
-      const list = (data || []) as UserWithBromides[];
+      const list = (data || []) as unknown as UserWithBromides[];
       setUsers(list);
       writeCache(USERS_CACHE_KEY, list);
     }
@@ -89,13 +108,13 @@ export default function AdminUsersPage() {
   const fetchBromides = async () => {
     const { data, error } = await supabase
       .from("bromides")
-      .select("*")
+      .select("id, title, serial_number")
       .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Error fetching bromides:", error);
     } else {
-      const list = data || [];
+      const list = (data || []) as BromideListItem[];
       setBromides(list);
       writeCache(BROMIDES_CACHE_KEY, list);
     }
