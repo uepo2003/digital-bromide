@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/lib/supabase";
 import { User, Bromide, UserBromide } from "@/types";
 import { generateAccessToken, hashPassword, generatePassword } from "@/lib/utils";
@@ -15,9 +16,38 @@ interface UserWithBromides extends User {
   user_bromides?: (UserBromide & { bromide: Bromide })[];
 }
 
+const USERS_CACHE_KEY = "admin:users:cache";
+const BROMIDES_CACHE_KEY = "admin:bromides:cache";
+
+function readCache<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = sessionStorage.getItem(key);
+    return cached ? (JSON.parse(cached) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore quota errors
+  }
+}
+
 export default function AdminUsersPage() {
-  const [users, setUsers] = useState<UserWithBromides[]>([]);
-  const [bromides, setBromides] = useState<Bromide[]>([]);
+  const [users, setUsers] = useState<UserWithBromides[]>(
+    () => readCache<UserWithBromides[]>(USERS_CACHE_KEY) ?? []
+  );
+  const [bromides, setBromides] = useState<Bromide[]>(
+    () => readCache<Bromide[]>(BROMIDES_CACHE_KEY) ?? []
+  );
+  const [isLoading, setIsLoading] = useState(
+    () => !readCache<UserWithBromides[]>(USERS_CACHE_KEY)
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserWithBromides | null>(null);
@@ -30,8 +60,9 @@ export default function AdminUsersPage() {
   const [selectedBromideId, setSelectedBromideId] = useState("");
 
   useEffect(() => {
-    fetchUsers();
-    fetchBromides();
+    void Promise.all([fetchUsers(), fetchBromides()]).finally(() => {
+      setIsLoading(false);
+    });
   }, []);
 
   const fetchUsers = async () => {
@@ -49,7 +80,9 @@ export default function AdminUsersPage() {
     if (error) {
       console.error("Error fetching users:", error);
     } else {
-      setUsers(data || []);
+      const list = (data || []) as UserWithBromides[];
+      setUsers(list);
+      writeCache(USERS_CACHE_KEY, list);
     }
   };
 
@@ -62,7 +95,9 @@ export default function AdminUsersPage() {
     if (error) {
       console.error("Error fetching bromides:", error);
     } else {
-      setBromides(data || []);
+      const list = data || [];
+      setBromides(list);
+      writeCache(BROMIDES_CACHE_KEY, list);
     }
   };
 
@@ -177,6 +212,29 @@ export default function AdminUsersPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+        {isLoading && users.length === 0 &&
+          Array.from({ length: 6 }).map((_, i) => (
+            <Card key={`skeleton-${i}`}>
+              <CardHeader>
+                <Skeleton className="h-6 w-1/2" />
+                <Skeleton className="h-4 w-2/3 mt-2" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Skeleton className="h-4 w-1/3 mb-3" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Skeleton className="h-9 flex-1" />
+                  <Skeleton className="h-9 w-9" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+
         {users.map((user, index) => (
           <motion.div
             key={user.id}
@@ -262,7 +320,7 @@ export default function AdminUsersPage() {
           </motion.div>
         ))}
 
-        {users.length === 0 && (
+        {!isLoading && users.length === 0 && (
           <div className="col-span-full text-center py-20">
             <div className="text-gray-400 mb-4">
               <Plus className="w-16 h-16 mx-auto mb-4" />

@@ -8,13 +8,28 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ImageUpload } from "@/components/ui/image-upload";
+import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/lib/supabase";
 import { Bromide } from "@/types";
 import Image from "next/image";
 import { motion } from "framer-motion";
 
+const BROMIDES_CACHE_KEY = "admin:bromides:cache";
+
 export default function AdminBromidesPage() {
-  const [bromides, setBromides] = useState<Bromide[]>([]);
+  const [bromides, setBromides] = useState<Bromide[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const cached = sessionStorage.getItem(BROMIDES_CACHE_KEY);
+      return cached ? (JSON.parse(cached) as Bromide[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return !sessionStorage.getItem(BROMIDES_CACHE_KEY);
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBromide, setEditingBromide] = useState<Bromide | null>(null);
   const [formData, setFormData] = useState({
@@ -37,8 +52,15 @@ export default function AdminBromidesPage() {
     if (error) {
       console.error("Error fetching bromides:", error);
     } else {
-      setBromides(data || []);
+      const list = data || [];
+      setBromides(list);
+      try {
+        sessionStorage.setItem(BROMIDES_CACHE_KEY, JSON.stringify(list));
+      } catch {
+        // ignore quota errors
+      }
     }
+    setIsLoading(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -131,6 +153,25 @@ export default function AdminBromidesPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {isLoading && bromides.length === 0 &&
+          Array.from({ length: 8 }).map((_, i) => (
+            <Card key={`skeleton-${i}`} className="overflow-hidden">
+              <Skeleton className="aspect-[3/4] w-full rounded-none" />
+              <CardHeader>
+                <Skeleton className="h-6 w-3/4" />
+                <Skeleton className="h-4 w-1/3 mt-2" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-4 w-2/3 mb-4" />
+                <div className="flex gap-2">
+                  <Skeleton className="h-9 flex-1" />
+                  <Skeleton className="h-9 w-9" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+
         {bromides.map((bromide, index) => (
           <motion.div
             key={bromide.id}
@@ -182,7 +223,7 @@ export default function AdminBromidesPage() {
           </motion.div>
         ))}
 
-        {bromides.length === 0 && (
+        {!isLoading && bromides.length === 0 && (
           <div className="col-span-full text-center py-20">
             <div className="text-gray-400 mb-4">
               <Plus className="w-16 h-16 mx-auto mb-4" />
